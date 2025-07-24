@@ -60,7 +60,7 @@ definitions:
       memory: 1024
     postgres:
       image: postgres:14
-      memory: 2048  
+      memory: 1536  # Reduced from 2048MB to 1536MB
       environment:
         POSTGRES_DB: $POSTGRES_DB
         POSTGRES_USER: $POSTGRES_USER
