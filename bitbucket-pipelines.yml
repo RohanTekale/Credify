@@ -57,15 +57,17 @@ pipelines:
 definitions:
   services:
     docker:
-      memory: 2048
+      memory: 1024
     postgres:
       image: postgres:14
+      memory: 2048  
       environment:
         POSTGRES_DB: $POSTGRES_DB
         POSTGRES_USER: $POSTGRES_USER
         POSTGRES_PASSWORD: $POSTGRES_PASSWORD
     redis:
       image: redis:7
+      memory: 512
 
 options:
   docker: true
