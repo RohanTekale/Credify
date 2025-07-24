@@ -182,7 +182,7 @@ SIMPLE_JWT = {
 }
 
 # CORS settings for nginx integration
-CSRF_TRUSTED_ORIGINS = env.list("CSRF_TRUSTED_ORIGINS")
+CSRF_TRUSTED_ORIGINS = env.list("CSRF_TRUSTED_ORIGINS",default=["http://localhost:8080"])
 
 # CORS settings for frontend integration
 CORS_ALLOWED_ORIGINS =[
