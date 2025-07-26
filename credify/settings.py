@@ -19,6 +19,8 @@ import sentry_sdk
 BASE_DIR = Path(__file__).resolve().parent.parent
 
 env = environ.Env()
+environ.Env.read_env(os.path.join(Path(__file__).resolve().parent.parent, '.env'))
+
 
 # Quick-start development settings - unsuitable for production
 # See https://docs.djangoproject.com/en/4.2/howto/deployment/checklist/
@@ -172,6 +174,8 @@ REST_FRAMEWORK = {
 # JWT settings
 from datetime import timedelta
 
+AUTH_USER_MODEL = 'users.User'
+
 SIMPLE_JWT = {
     'ACCESS_TOKEN_LIFETIME': timedelta(minutes=60),
     'REFRESH_TOKEN_LIFETIME': timedelta(days=1),
@@ -257,7 +261,10 @@ MEDIA_ROOT =  os.path.join(BASE_DIR, 'media')
 # Default primary key field type
 # https://docs.djangoproject.com/en/4.2/ref/settings/#default-auto-field
 
-
+CELERY_TASK_DEFAULT_QUEUE = 'default'
+CELERY_TASK_TRACK_STARTED = True
+CELERY_TASK_TIME_LIMIT = 30 * 60  # 30 minutes
+CELERY_IMPORTS = ('users.tasks',)
 
 
 # ********************************************************************************* IMP_NOTE *********************************************************************************

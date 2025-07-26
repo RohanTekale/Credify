@@ -1,0 +1,103 @@
+from rest_framework import serializers
+from  .models import User
+import cloudinary.uploader
+
+
+class UserRegistrationSerializer(serializers.ModelSerializer):
+    password = serializers.CharField(write_only=True, min_length=8)
+
+    class Meta:
+        model = User
+        fields = ['username', 'email', 'password', 'phone_number', 'address']
+    
+    def validate(self, data):
+        if User.objects.filter(email=data.get('email')).exists():
+            raise serializers.ValidationError('Email already exists')
+        return data
+    
+    def create(self, validated_data):
+        user = User.objects.create_user(
+            username=validated_data['username'],
+            email=validated_data['email'],
+            password=validated_data['password'],
+            phone_number=validated_data.get('phone_number', ''),
+            address=validated_data.get('address', '')
+        )
+        return user
+    
+class LoginSerializer(serializers.Serializer):
+    username = serializers.CharField(required=False, allow_blank=True)
+    email = serializers.EmailField(required=False, allow_blank=True)
+    password = serializers.CharField(required=True, write_only=True)
+
+    def validate(self, data):
+        username= data.get('username')
+        email= data.get('email')
+        password= data.get('password')
+
+        if not (username or email):
+            raise serializers.ValidationError('Username or Email is required')
+        if not password:
+            raise serializers.ValidationError('Password is required')
+        
+        user = None
+        if email:
+            try:
+                user = User.objects.get(email=email)
+            except User.DoesNotExist:
+                raise serializers.ValidationError('invalid Credentials')
+        else:
+            try:
+                user = User.objects.get(username=username)
+            except User.DoesNotExist:
+                raise serializers.ValidationError('invalid Credentials')
+        if not user.check_password(password):
+            raise serializers.ValidationError('invalid Credentials')
+        
+        data['user'] = user
+        return data
+
+
+class UserProfileSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = User
+        fields = ['username', 'email', 'phone_number', 'address', 'kyc_status', 'is_email_verified']
+        read_only_fields = ['kyc_status', 'is_email_verified']
+
+class KYCUploadserializer(serializers.ModelSerializer):
+    kyc_document = serializers.FileField(write_only=True)
+
+    class Meta:
+        model = User
+        fields = ['kyc_document']
+    
+    def validate_kyc_document(self,value):
+        if not value.name.lower().endswith(('.pdf', '.jpg', '.jpeg', '.png')):
+            raise serializers.ValidationError({"error": "Invalid file format. Only PDF, JPG, JPEG, or PNG allowed."})
+        if value.size > 5 * 1024 * 1024: #5mb limit
+            raise serializers.ValidationError({"error": "File size should not exceed 5MB limit"})
+        return value
+    
+    def update(self, instance, validated_data):
+        file = validated_data['kyc_document']
+        upload_result = cloudinary.uploader.upload(file, folder='kyc_documents', resource_type ='auto')
+        instance.kyc_document = upload_result['secure_url']
+        instance.kyc_status = 'pending'
+        instance.save()
+        return instance
+    
+class KYCReviewSerializer(serializers.ModelSerializer):
+    kyc_status = serializers.ChoiceField(choices=['verified', 'rejected'])
+
+    class Meta:
+        model = User
+        fields = ['kyc_status']
+class PasswordChangeSerializer(serializers.ModelSerializer):
+    old_password = serializers.CharField(write_only=True)
+    new_password = serializers.CharField(write_only=True, min_length=8)
+
+    def validate_old_password(self, value):
+        user = self.context['request'].user
+        if not user.check_password(value):
+            raise serializers.ValidationError({"error": "Old password is incorrect."})
+        return value
