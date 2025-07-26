@@ -9,7 +9,7 @@ from drf_yasg.utils import swagger_auto_schema
 from django.views.decorators.csrf import csrf_exempt
 from .models import User
 from .serializers import (
-    UserRegistrationSerializer,LoginSerializer,UserProfileSerializer, KYCUploadserializer, KYCReviewSerializer, PasswordChangeSerializer)
+    UserRegistrationSerializer,LoginSerializer,UserProfileSerializer, KYCUploadserializer, KYCReviewSerializer, PasswordChangeSerializer,ForgotPasswordSerializer,ResetPasswordSerializer)
 from .permissions import IsSupportStaff
 
 class UserViewSet(viewsets.ModelViewSet):
@@ -19,7 +19,7 @@ class UserViewSet(viewsets.ModelViewSet):
     parser_classes = [parsers.FormParser, parsers.JSONParser, parsers.MultiPartParser]
 
     def get_permissions(self):
-        if self.action in ['register', 'login']:
+        if self.action in ['register', 'login','forgot_password', 'reset_password']:
             return [AllowAny()]
         elif self.action == 'kyc_review':
             return [IsSupportStaff()]
@@ -107,6 +107,29 @@ class UserViewSet(viewsets.ModelViewSet):
             request.user.save()
             return Response({"message": "Password changed successfully"}, status=status.HTTP_200_OK)
         return Response({"error": serializer.errors}, status=status.HTTP_400_BAD_REQUEST)
+    
+    @action(detail=False,methods=['post'])
+    @swagger_auto_schema(responses={200:"Password reset token generated"})
+    def  forgot_password(self,request):
+        serializer = ForgotPasswordSerializer(data=request.data)
+        if serializer.is_valid():
+            user = serializer.validated_data['user']
+            token = RefreshToken.for_user(user).access_token
+            return Response({"message": "Password reset token generated", "token": str(token)},status=status.HTTP_200_OK)
+        return Response({"error":serializer.errors},status=status.HTTP_400_BAD_REQUEST)
+    
+    @action(detail=False,methods=['post'])
+    @swagger_auto_schema(responses={200:"Password reset successful"})
+    def reset_password(self,request):
+        serializer = ResetPasswordSerializer(data=request.data, context={'request':request})
+        if serializer.is_valid():
+            user = serializer.validated_data['user']
+            user.set_password(serializer.validated_data['new_password'])
+            user.save()
+            return Response({"message": "Password reset successfully"},status=status.HTTP_200_OK)
+        return Response({"error":serializer.errors},status=status.HTTP_400_BAD_REQUEST)
+
+
 
 class CustomTokenObtainPairView(TokenObtainPairView):
     pass
