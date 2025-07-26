@@ -1,7 +1,7 @@
 from rest_framework import serializers
 from  .models import User
 import cloudinary.uploader
-
+from rest_framework_simplejwt.tokens import AccessToken
 
 class UserRegistrationSerializer(serializers.ModelSerializer):
     password = serializers.CharField(write_only=True, min_length=8)
@@ -92,12 +92,79 @@ class KYCReviewSerializer(serializers.ModelSerializer):
     class Meta:
         model = User
         fields = ['kyc_status']
-class PasswordChangeSerializer(serializers.ModelSerializer):
+class PasswordChangeSerializer(serializers.Serializer):
+    username = serializers.CharField(required=False)
+    email = serializers.EmailField(required=False, allow_blank=True)
     old_password = serializers.CharField(write_only=True)
     new_password = serializers.CharField(write_only=True, min_length=8)
 
-    def validate_old_password(self, value):
+    def validate(self, data):
+        username = data.get('username')
+        email = data.get('email')
+
+        if not (username or email):
+            raise serializers.ValidationError({"error": "Username or email is required"})
+        
         user = self.context['request'].user
-        if not user.check_password(value):
-            raise serializers.ValidationError({"error": "Old password is incorrect."})
-        return value
+        if username and username != user.username:
+            raise serializers.ValidationError({"error": "Username does not match"})
+        if email and email != user.email:
+            raise serializers.ValidationError({"error": "Email does not match"})
+        
+        if not user.check_password(data['old_password']):
+            raise serializers.ValidationError({"error": "Old password is incorrect"})
+        
+        return data
+    
+class ForgotPasswordSerializer(serializers.Serializer):
+    username = serializers.CharField(required =False, allow_blank=True)
+    email = serializers.EmailField(required = False, allow_blank=True)
+
+    def validate(self, data):
+        username = data.get('username')
+        email = data.get('email')
+
+        if not (username or email):
+            raise serializers.ValidationError({"error": "Username or Email is required."})
+        user = None
+        if email:
+            try:
+                user = User.objects.get(email=email)
+            except User.DoesNotExist:
+                raise serializers.ValidationError({"error": "User with this email does not exist."})
+        else:
+            try:
+                user = User.objects.get(username=username)
+            except User.DoesNotExist:
+                raise serializers.ValidationError({"error": "User with this username does not exist."})
+        data['user'] = user
+        return data
+    
+class ResetPasswordSerializer(serializers.Serializer):
+    username = serializers.CharField(required=False)
+    email = serializers.EmailField(required=False, allow_blank=True)
+    token = serializers.CharField(required=True)
+    new_password = serializers.CharField(write_only=True, min_length=8)
+
+    def validate(self,data):
+        username = data.get('username')
+        email = data.get('email')
+
+        if not (username or email):
+            raise serializers.ValidationError({"error": "Username or Email is required."})
+        
+        try:
+            user = None
+            if email:
+                user = User.objects.get(email=email)
+            else:
+                user = User.objects.get(username=username)
+            token = AccessToken(data['token'])
+            if token['user_id'] != user.id:
+                raise serializers.ValidationError({"error": "Invalid token"})
+            data['user']=user
+            return data
+        except User.DoesNotExist:
+            raise serializers.ValidationError({"error": "User with this username or email does not exist."})
+        except Exception:
+            raise serializers.ValidationError({"error": "Invalid token"})
