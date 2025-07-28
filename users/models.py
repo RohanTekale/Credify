@@ -18,5 +18,28 @@ class User(AbstractUser):
     def __str__(self):
         return self.username
 
+class KYCReviewLog(models.Model):
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='kyc_reviews')
+    reviewer = models.ForeignKey(User, on_delete=models.SET_NULL,null=True, related_name='reviewed_kycs')
+    kyc_status = models.CharField(max_length=20, choices=[('pending', 'Pending'), ('verified', 'Verified'), ('rejectcommened', 'Rejected')])
+    comments = models.TextField(blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+
+    def __str__(self):
+        return f"KYC Review for {self.user.username} by {self.reviewer.username} - {self.kyc_status}"
+    
+class ReactivationRequest(models.Model):
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='reactivation_requests')
+    reason = models.TextField(blank=True)
+    status = models.CharField(max_length=20,choices=[('pending', 'Pending'), ('approved', 'Approved'), ('rejected', 'Rejected')], default='pending')
+    admin_comments = models.TextField(blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+
+    def __str__(self):
+        return 
+
 
     

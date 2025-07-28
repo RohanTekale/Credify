@@ -166,7 +166,13 @@ REST_FRAMEWORK = {
     'PAGE_SIZE': 50,
     'DEFAULT_VERSIONING_CLASS': 'rest_framework.versioning.NamespaceVersioning',
     'DEFAULT_RENDERER_CLASSES': ['rest_framework.renderers.JSONRenderer'],
-    'EXCEPTION_HANDLER': "credify_core.utils.credify_exception_handler"
+    'EXCEPTION_HANDLER': "credify_core.utils.credify_exception_handler",
+    'DEFAULT_THROTTLE_CLASSES': (
+        'users.throttles.RequestReactivationOnlyThrottle',  
+    ),
+    'DEFAULT_THROTTLE_RATES': {
+        'anon': '10/hour',  
+    },
 
 
 }

@@ -1,5 +1,6 @@
 from rest_framework import serializers
-from  .models import User
+from  .models import User,ReactivationRequest
+from django.db import models
 import cloudinary.uploader
 from rest_framework_simplejwt.tokens import AccessToken
 
@@ -51,6 +52,9 @@ class LoginSerializer(serializers.Serializer):
                 user = User.objects.get(username=username)
             except User.DoesNotExist:
                 raise serializers.ValidationError('invalid Credentials')
+        if not user.is_active:
+            raise serializers.ValidationError('Account is deactivated. Please request reactivation.')
+        
         if not user.check_password(password):
             raise serializers.ValidationError('invalid Credentials')
         
@@ -87,11 +91,20 @@ class KYCUploadserializer(serializers.ModelSerializer):
         return instance
     
 class KYCReviewSerializer(serializers.ModelSerializer):
+    user_id  = serializers.IntegerField(write_only=True)
     kyc_status = serializers.ChoiceField(choices=['verified', 'rejected'])
+    reviewer_comments = serializers.CharField(max_length=500,required=False, allow_blank=True)
 
     class Meta:
         model = User
-        fields = ['kyc_status']
+        fields = ['user_id','kyc_status','reviewer_comments']
+    def validate_user_id(self,value):
+        try:
+            User.objects.get(id=value)
+        except User.DoesNotExist:
+            raise serializers.ValidationError({"error": "User not found"})
+        return value
+       
 class PasswordChangeSerializer(serializers.Serializer):
     username = serializers.CharField(required=False)
     email = serializers.EmailField(required=False, allow_blank=True)
@@ -168,3 +181,46 @@ class ResetPasswordSerializer(serializers.Serializer):
             raise serializers.ValidationError({"error": "User with this username or email does not exist."})
         except Exception:
             raise serializers.ValidationError({"error": "Invalid token"})
+
+
+class ReactivationRequestSerializer(serializers.ModelSerializer):
+    identifier = serializers.CharField(required=True, write_only=True)
+    reason = serializers.CharField(max_length= 500, required=True)
+    class Meta:
+        model = ReactivationRequest
+        fields =['identifier','reason']
+
+    def validate_identifier(self, value):
+        try:
+            user =User.objects.filter(
+                models.Q(email=value) | models.Q(phone_number=value)
+            ).first()
+            if not user:
+                raise serializers.ValidationError({"error": "User with this email or phone number does not exist,Please try again."})
+            if user.is_active:
+                raise serializers.ValidationError({"error": "User is already active"})
+            return value
+        except User.DoesNotExist:
+            raise serializers.ValidationError({"error": "User with this email or phone number does not exist"})
+
+    def create(self,validated_data):
+        user = User.objects.filter(
+            models.Q(email=validated_data['identifier']) |
+            models.Q(phone_number=validated_data['identifier'])
+        ).first()
+        return ReactivationRequest.objects.create(user=user,reason=validated_data['reason'])
+    
+class ReactivationReviewSerializer(serializers.ModelSerializer):
+    request_id = serializers.IntegerField(write_only=True)
+    status = serializers.ChoiceField(choices=['approved', 'rejected'])
+    admin_comments = serializers.CharField(max_length=500, required=False, allow_blank=True)
+
+    class Meta:
+        model = ReactivationRequest
+        fields = ['request_id', 'status', 'admin_comments']
+    def validate_request_id(self, value):
+        try:
+            ReactivationRequest.objects.get(id=value, status='pending')
+        except ReactivationRequest.DoesNotExist:
+            raise serializers.ValidationError({"error": "Pending reactivation request not found"})
+        return value
