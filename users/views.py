@@ -7,10 +7,11 @@ from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
 from rest_framework_simplejwt.tokens import RefreshToken
 from drf_yasg.utils import swagger_auto_schema
 from django.views.decorators.csrf import csrf_exempt
-from .models import User
+from .models import User,KYCReviewLog,ReactivationRequest
 from .serializers import (
-    UserRegistrationSerializer,LoginSerializer,UserProfileSerializer, KYCUploadserializer, KYCReviewSerializer, PasswordChangeSerializer,ForgotPasswordSerializer,ResetPasswordSerializer)
+    UserRegistrationSerializer,LoginSerializer,UserProfileSerializer, KYCUploadserializer, KYCReviewSerializer, PasswordChangeSerializer,ForgotPasswordSerializer,ResetPasswordSerializer,ReactivationRequestSerializer,ReactivationReviewSerializer)
 from .permissions import IsSupportStaff
+from .tasks import send_kyc_notification_email, send_reactivation_notification_email
 
 class UserViewSet(viewsets.ModelViewSet):
     queryset = User.objects.all()
@@ -19,9 +20,9 @@ class UserViewSet(viewsets.ModelViewSet):
     parser_classes = [parsers.FormParser, parsers.JSONParser, parsers.MultiPartParser]
 
     def get_permissions(self):
-        if self.action in ['register', 'login','forgot_password', 'reset_password']:
+        if self.action in ['register', 'login','forgot_password', 'reset_password','request_reactivation']:
             return [AllowAny()]
-        elif self.action == 'kyc_review':
+        elif self.action in [ 'kyc_review','review_reactivation']:
             return [IsSupportStaff()]
         return [IsAuthenticated()]
 
@@ -29,8 +30,16 @@ class UserViewSet(viewsets.ModelViewSet):
         # Restrict Standard Users to their own data; Admins/Support see all
         if self.request.user.is_staff or self.request.user.is_support:
             return User.objects.all()
-        return User.objects.filter(id=self.request.user.id)
-
+        return User.objects.filter(id=self.request.user.id, is_active=True)
+    
+    def destroy(self, request, *args, **kwargs):
+        instance = self.get_object()
+        if not (request.user.is_staff or request.user.is_support):
+            return Response({"error": "Only staff or support can deactivate users"}, status=status.HTTP_403_FORBIDDEN)
+        instance.is_active = False
+        instance.save()
+        return Response({"message": "User deactivated successfully"}, status=status.HTTP_200_OK)
+    
     @action(detail=False, methods=['post'])
     @csrf_exempt
     @swagger_auto_schema(responses={201: "User registered successfully"})
@@ -85,18 +94,28 @@ class UserViewSet(viewsets.ModelViewSet):
             return Response({"message": "KYC document uploaded successfully"}, status=status.HTTP_200_OK)
         return Response({"error": serializer.errors}, status=status.HTTP_400_BAD_REQUEST)
 
-    @action(detail=True, methods=['post'])
+    @action(detail=False, methods=['post'])
     @swagger_auto_schema(responses={200: "KYC document reviewed successfully"})
     def kyc_review(self, request, pk=None):
-        try:
-            user = User.objects.get(id=pk)
-            serializer = KYCReviewSerializer(user, data=request.data)
-            if serializer.is_valid():
-                serializer.save()
-                return Response({"message": f"KYC status updated to {serializer.validated_data['kyc_status']}"}, status=status.HTTP_200_OK)
-            return Response({"error": serializer.errors}, status=status.HTTP_400_BAD_REQUEST)
-        except User.DoesNotExist:
-            return Response({"error": "User not found"}, status=status.HTTP_404_NOT_FOUND)
+        serializer = KYCReviewSerializer(data=request.data)
+        if serializer.is_valid():
+            user = User.objects.get(id=serializer.validated_data['user_id'])
+            user.kyc_status = serializer.validated_data['kyc_status']
+            user.save()
+            KYCReviewLog.objects.create(
+                user=user,
+                reviewer=request.user,
+                kyc_status=serializer.validated_data['kyc_status'],
+                comments= serializer.validated_data.get('reviewer_comments', '')
+            )
+            # send_kyc_notification_email.delay(
+            #     user.email,
+            #     serializer.validated_data['kyc_status'],
+            #     serializer.validated_data.get('reviewer_comments', '')
+
+            # )
+            return Response({"message": f"KYC status updated to {serializer.validated_data['kyc_status']}"}, status=status.HTTP_200_OK)
+        return Response({"error": serializer.errors}, status=status.HTTP_400_BAD_REQUEST) 
 
     @action(detail=False, methods=['post'])
     @swagger_auto_schema(responses={200: "Password changed successfully"})
@@ -128,6 +147,35 @@ class UserViewSet(viewsets.ModelViewSet):
             user.save()
             return Response({"message": "Password reset successfully"},status=status.HTTP_200_OK)
         return Response({"error":serializer.errors},status=status.HTTP_400_BAD_REQUEST)
+    
+    @action(detail=False,methods=['post'])
+    @swagger_auto_schema(responses={201: "Reactivation request submitted successfully"})
+    def request_reactivation(self, request):
+        serializer = ReactivationRequestSerializer(data=request.data,context={'request': request})
+        if serializer.is_valid():
+            reactivation_request = serializer.save()
+            return Response({"message": "Reactivation request submitted successfully","request_id": reactivation_request.id,"status": reactivation_request.status}, status=status.HTTP_201_CREATED)
+        return Response({"error": serializer.errors}, status=status.HTTP_400_BAD_REQUEST)
+        
+    @action(detail=False, methods=['post'])
+    @swagger_auto_schema(responses={200: "Reactivation request reviewed successfully"})
+    def review_reactivation_request(self, request):
+        serializer = ReactivationReviewSerializer(data=request.data)
+        if serializer.is_valid():
+            reactivation_request = ReactivationRequest.objects.get(id=serializer.validated_data['request_id'])
+            reactivation_request.status = serializer.validated_data['status']
+            reactivation_request.admin_comments = serializer.validated_data.get('admin_comments', '')
+            reactivation_request.save()
+            if reactivation_request.status == 'approved':
+                reactivation_request.user.is_active = True
+                reactivation_request.user.save()
+            # send_reactivation_notification_email.delay(
+            #     reactivation_request.user.email, 
+            #     reactivation_request.status,
+            #     serializer.validated_data.get('admin_comments', '')
+            # )
+            return Response({"message": f"Reactivation request {reactivation_request.status}"}, status=status.HTTP_200_OK)
+        return Response({"error": serializer.errors}, status=status.HTTP_400_BAD_REQUEST)
 
 
 
