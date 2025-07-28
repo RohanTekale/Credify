@@ -1,4 +1,5 @@
 #!/bin/bash
+chmod +x start.sh
 
 echo "🧹 Cleaning up local virtual environment..."
 rm -rf venv

@@ -77,7 +77,41 @@ services:
     depends_on:
       - web
 
+  metabase:
+    image: metabase/metabase:latest
+    container_name: credify_metabase
+    env_file:
+      - .env
+    environment:
+      - MB_DB_TYPE=postgres
+      - MB_DB_DBNAME=${POSTGRES_DB}
+      - MB_DB_PORT=5432
+      - MB_DB_USER=${POSTGRES_USER}
+      - MB_DB_PASS=${POSTGRES_PASSWORD}
+      - MB_DB_HOST=db
+      - MB_ADMIN_EMAIL=admin@credify.com
+      - MB_ADMIN_PASSWORD=securepassword123
+      - MB_SETUP_TOKEN=skip
+    depends_on:
+      - db
+    ports:
+      - "3000:3000"
+    volumes:
+      - metabase_data:/metabase-data
+    deploy:
+      resources:
+        limits:
+          cpus: '0.50'
+          memory: 1024M
+        reservations:
+          cpus: '0.25'
+          memory: 512M
+
+
+
+
 volumes:
   postgres_data:
+  metabase_data:
 
 
