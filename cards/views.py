@@ -9,7 +9,7 @@ from .models import CreditCard, CardType, CardRequest
 from .serializers import CardCreateSerializer, CreditCardSerializer
 from users.permissions import IsSupportStaff
 from django.contrib.auth import get_user_model
-from .utils import generate_card_number, generate_cvv, calculate_expiry_date
+from .utils import generate_card_number, generate_cvv, calculate_expiry_date,calculate_credit_limit
 from django.contrib.auth.hashers import make_password
 from notifications.tasks import notify_admin_card_approve
 
@@ -30,7 +30,7 @@ class CardViewSet(viewsets.ModelViewSet):
         return super().get_permissions()
 
     def get_queryset(self):
-        if self.request.user.is_staff or self.request.user.is_support:
+        if self.request.user.is_staff or getattr(self.request.user,'is_support', False):
             return CreditCard.objects.all()
         return CreditCard.objects.filter(user=self.request.user, status__in=['active', 'frozen'])
 
@@ -43,13 +43,20 @@ class CardViewSet(viewsets.ModelViewSet):
             user = request.user
             card_type = serializer.validated_data['card_type']
             is_single_use = serializer.validated_data['is_single_use']
+            income = serializer.validated_data['income']
+
+
+            user.income = income
+            user.save()
+
+            credit_limit = calculate_credit_limit(card_type, user)
 
             if card_type.requires_admin_approval:
                 card_request = CardRequest.objects.create(
                     user=user,
                     card_type=card_type,
                     is_single_use=is_single_use,
-                    income=serializer.validated_data['income'],
+                    income=income,
                     occupation=serializer.validated_data['occupation'],
                     intended_use=serializer.validated_data['intended_use']
                 )
@@ -67,12 +74,12 @@ class CardViewSet(viewsets.ModelViewSet):
                     card_number=hashed_number,
                     cvv=make_password(generate_cvv()),
                     expiry_date=calculate_expiry_date(card_type),
-                    credit_limit=card_type.default_credit_limit,
-                    available_credit=card_type.default_credit_limit,
+                    credit_limit=credit_limit,
+                    available_credit=credit_limit,
                     is_single_use=is_single_use
                 )
                 return Response(
-                    CreditCardSerializer(card).data,
+                    CreditCardSerializer(card, context={'request':request}).data,
                     status=status.HTTP_201_CREATED
                 )
             except ValueError as e:
@@ -98,7 +105,8 @@ class CardViewSet(viewsets.ModelViewSet):
                 card_request.status = 'rejected'
                 card_request.save()
                 return Response({"message": "Card request rejected"}, status=status.HTTP_200_OK)
-
+            
+            credit_limit = calculate_credit_limit(card_request.card_type, card_request.user)
             card_number, hashed_number = generate_card_number()
             card = CreditCard.objects.create(
                 user=card_request.user,
@@ -106,14 +114,14 @@ class CardViewSet(viewsets.ModelViewSet):
                 card_number=hashed_number,
                 cvv=make_password(generate_cvv()),
                 expiry_date=calculate_expiry_date(card_request.card_type),
-                credit_limit=card_request.card_type.default_credit_limit,
-                available_credit=card_request.card_type.default_credit_limit,
+                credit_limit=credit_limit,
+                available_credit=credit_limit,
                 is_single_use=card_request.is_single_use
             )
             card_request.status = 'approved'
             card_request.save()
             return Response(
-                CreditCardSerializer(card).data,
+                CreditCardSerializer(card,context={'request': request}).data,
                 status=status.HTTP_201_CREATED
             )
         except CardRequest.DoesNotExist:
@@ -122,3 +130,6 @@ class CardViewSet(viewsets.ModelViewSet):
             from sentry_sdk import capture_exception
             capture_exception(e)
             return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+        

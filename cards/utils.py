@@ -41,3 +41,25 @@ def generate_cvv():
 def calculate_expiry_date(card_type):
     years = card_type.expiry_years
     return timezone.now().date() + timezone.timedelta(days=years * 365)
+
+
+def calculate_credit_limit(card_type, user):
+
+    if user.kyc_status != 'verified':
+        return 0.00
+    base_limit = card_type.default_credit_limit
+    if user.income is None:
+        return base_limit
+    
+    income = float(user.income)
+    if card_type.name == 'Basic':
+        return base_limit
+    elif card_type.name == 'Silver':
+        return min(base_limit * 1.5, 1500.00) if  income >= 30000 else base_limit
+    elif card_type.name == 'Premium':
+        return min(base_limit * 1.5, 4000.00) if income >= 50000 else base_limit
+    elif card_type.name == 'Gold':
+        return min(base_limit * 1.5, 7500.00) if income >= 75000 else base_limit
+    elif card_type.name == 'Platinum':
+        return min(base_limit * 1.5, 10000.00) if income >= 100000 else base_limit
+    return base_limit
