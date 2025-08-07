@@ -1,7 +1,12 @@
-# users/urls.py
+# transactions/urls.py
 
-from django.urls import path
+from rest_framework.routers import DefaultRouter
+from .views import TransactionViewSet
+from django.urls import path, include
+
+router = DefaultRouter()
+router.register(r'', TransactionViewSet, basename='transaction') 
 
 urlpatterns = [
-    # Add your path() routes here later
+    path('', include(router.urls)),
 ]
