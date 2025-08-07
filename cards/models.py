@@ -63,3 +63,5 @@ class CardRequest(models.Model):
 
     def __str__(self):
         return f"{self.card_type.name} request for {self.user.username}"
+
+

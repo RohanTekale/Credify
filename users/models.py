@@ -1,5 +1,7 @@
 from django.contrib.auth .models import AbstractUser
 from django.db import models
+from django.core.validators import MinValueValidator
+
 
 class User(AbstractUser):
     email = models.EmailField(unique=True)
@@ -12,7 +14,16 @@ class User(AbstractUser):
         default= 'pending'
     )
     is_email_verified = models.BooleanField(default=False)
-    is_support = models.BooleanField(default=False)  # this is for support staf
+    is_support = models.BooleanField(default=False)  # this is for support staff
+
+    income = models.DecimalField(
+        max_digits=10,
+        decimal_places=2,
+        validators=[MinValueValidator(0)],
+        null=True,
+        blank=True,
+        help_text="Annual income in USD for credit limit evaluation"
+    )
 
 
     def __str__(self):

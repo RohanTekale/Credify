@@ -37,11 +37,20 @@ class CardCreateSerializer(serializers.Serializer):
 class CreditCardSerializer(serializers.ModelSerializer):
     card_number = serializers.SerializerMethodField()
     card_Type = serializers.CharField(source='card_type.name')  # ✅ updated field name
+    unmasked_card_number= serializers.SerializerMethodField()
 
 
     def get_card_number(self, obj):
         return f"**** **** **** {obj.card_number[-4:]}"
     
+    def get_unmasked_card_number(self, obj):
+        user = self.context['request'].user
+        if user.is_staff or getattr(user, 'is_support', False):
+            return obj.card_number
+        return None
+    
     class Meta:
         model = CreditCard
-        fields = ['id', 'card_Type', 'card_number', 'expiry_date', 'credit_limit', 'available_credit', 'status', 'nickname']
+        fields = ['id', 'card_Type', 'card_number','unmasked_card_number', 'expiry_date', 'credit_limit', 'available_credit', 'status', 'nickname']
+
+

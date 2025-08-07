@@ -7,11 +7,17 @@ from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
 from rest_framework_simplejwt.tokens import RefreshToken
 from drf_yasg.utils import swagger_auto_schema
 from django.views.decorators.csrf import csrf_exempt
+from django.utils.decorators import method_decorator
 from .models import User,KYCReviewLog,ReactivationRequest
 from .serializers import (
     UserRegistrationSerializer,LoginSerializer,UserProfileSerializer, KYCUploadserializer, KYCReviewSerializer, PasswordChangeSerializer,ForgotPasswordSerializer,ResetPasswordSerializer,ReactivationRequestSerializer,ReactivationReviewSerializer)
 from .permissions import IsSupportStaff
 from .tasks import send_kyc_notification_email, send_reactivation_notification_email
+
+@method_decorator(csrf_exempt, name='dispatch')
+class CustomTokenObtainPairView(TokenObtainPairView):
+    """Custom login view to bypass CSRF for JWT authentication."""
+    pass
 
 class UserViewSet(viewsets.ModelViewSet):
     queryset = User.objects.all()
