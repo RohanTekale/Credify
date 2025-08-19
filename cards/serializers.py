@@ -32,7 +32,12 @@ class CardCreateSerializer(serializers.Serializer):
         if not user.is_active:
             raise serializers.ValidationError("User account is deactivated")
         return data
-    
+
+class CardStatusSerializer(serializers.ModelSerializer):
+    class Meta:
+        Model = CreditCard
+        fields = ['status']
+        read_only_fields = ['status']
 
 class CreditCardSerializer(serializers.ModelSerializer):
     card_number = serializers.SerializerMethodField()

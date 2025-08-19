@@ -6,12 +6,14 @@ from rest_framework.parsers import FormParser, JSONParser, MultiPartParser
 from drf_yasg.utils import swagger_auto_schema
 from django.views.decorators.csrf import csrf_exempt
 from .models import CreditCard, CardType, CardRequest
-from .serializers import CardCreateSerializer, CreditCardSerializer
+from .serializers import CardCreateSerializer, CreditCardSerializer, CardStatusSerializer
+from .permissions import IsSupportOrCardOwner
 from users.permissions import IsSupportStaff
 from django.contrib.auth import get_user_model
 from .utils import generate_card_number, generate_cvv, calculate_expiry_date,calculate_credit_limit
 from django.contrib.auth.hashers import make_password
-from notifications.tasks import notify_admin_card_approve
+from notifications.tasks import notify_admin_card_approve,send_card_status_notification
+from django.utils import timezone
 
 User = get_user_model()
 
@@ -25,8 +27,10 @@ class CardViewSet(viewsets.ModelViewSet):
     def get_permissions(self):
         if self.action in ['create_card']:
             return [IsAuthenticated()]
-        elif self.action in ['approve_card_request']:
+        elif self.action in ['approve_card_request', 'freeze', 'unfreeze']:
             return [IsSupportStaff()]
+        elif self.action in ['block']:
+            return [IsSupportOrCardOwner()]
         return super().get_permissions()
 
     def get_queryset(self):
@@ -130,6 +134,67 @@ class CardViewSet(viewsets.ModelViewSet):
             from sentry_sdk import capture_exception
             capture_exception(e)
             return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+    
+    @action(detail=True, methods=['patch'])
+    @swagger_auto_schema(responses={200: "Card frozen successfully"})
+    def freeze(self, request, pk=None):
+        try:
+            card = self.get_object()
+            if card.status == 'frozen':
+                return Response({"error": "Card is already frozen"}, status=status.HTTP_400_BAD_REQUEST)
+            if card.status == 'blocked':
+                return Response({"error": "Blocked card cannot be frozen"}, status=status.HTTP_400_BAD_REQUEST)
+            card.status = 'frozen'
+            card.updated_at = timezone.now()
+            card.save()
+            return Response({"message": "Card frozen successfully"}, status=status.HTTP_200_OK)
+        except CreditCard.DoesNotExist:
+            return Response({"error": "Card not found"}, status=status.HTTP_404_NOT_FOUND)
+    
+    @action(detail=True, methods=['patch'])
+    @swagger_auto_schema(responses={200: "Card unfrozen successfully"})
+    def unfreeze(self, request, pk=None):
+        try:
+            card = self.get_object()
+            if card.status== 'active':
+                return Response({"error":"card is already active"}, status=status.HTTP_400_BAD_REQUEST)
+            if card.status == 'blocked':
+                return Response({"error": "Blocked card cannot be unfrozen"}, status=status.HTTP_400_BAD_REQUEST)
+            card.status = 'active'
+            card.updated_at = timezone.now()
+            card.save()
+            return Response({"message": "Card unfrozen successfully"}, status=status.HTTP_200_OK)
+        except CreditCard.DoesNotExist:
+            return Response({"error": "Card not found"}, status=status.HTTP_404_NOT_FOUND)
+    
+    @action(detail=True, methods=['patch'])
+    @swagger_auto_schema(responses={200: "Card blocked successfully"})
+    def block(self, request, pk=None):
+        try:
+            card = self.get_object()
+            if card.status == 'blocked':
+                return Response({"error": "Card is already blocked"}, status=status.HTTP_400_BAD_REQUEST)
+            card.status = 'blocked'
+            card.updated_at = timezone.now()
+            card.save()
+            return Response({"message": "Card blocked successfully"}, status=status.HTTP_200_OK)
+        except CreditCard.DoesNotExist:
+            return Response({"error": "Card not found"}, status=status.HTTP_404_NOT_FOUND)
+    
+    @action(detail=True, methods=['patch'])
+    @swagger_auto_schema(responses={200: "Card unblocked successfully"})
+    def unblock(self, request, pk=None):
+        try:
+            card = self.get_object()
+            if card.status != 'blocked':
+                return Response({"error": "Card is not blocked"}, status=status.HTTP_400_BAD_REQUEST)
+            card.status = 'active'
+            card.updated_at = timezone.now()
+            card.save()
+            return Response({"message": "Card Unblocked Successfully"}, status=status.HTTP_200_OK)
+        except CreditCard.DoesNotExist:
+            return Response({"error":"Card not found"}, status=status.HTTP_404_NOT_FOUND)
+
 
 
         
