@@ -1,6 +1,9 @@
 from rest_framework import serializers
 from .models import CreditCard, CardType
+from django.contrib.auth import get_user_model
 from django.utils import timezone
+
+User = get_user_model()
 
 
 class CardCreateSerializer(serializers.Serializer):
@@ -27,22 +30,23 @@ class CardCreateSerializer(serializers.Serializer):
         user = self.context['request'].user
         if user.kyc_status != 'verified':
             raise serializers.ValidationError("KYC verification is required")
-        if CreditCard.objects.filter(user=user, status='active').count() >= 3:
-            raise serializers.ValidationError("Maximum 3 active cards allowed")
+        if CreditCard.objects.filter(user=user, status__in=['active', 'frozen']).count() >= 3:
+            raise serializers.ValidationError("Maximum 3 active or frozen cards allowed")
         if not user.is_active:
             raise serializers.ValidationError("User account is deactivated")
         return data
 
 class CardStatusSerializer(serializers.ModelSerializer):
     class Meta:
-        Model = CreditCard
+        model = CreditCard
         fields = ['status']
         read_only_fields = ['status']
 
 class CreditCardSerializer(serializers.ModelSerializer):
     card_number = serializers.SerializerMethodField()
-    card_Type = serializers.CharField(source='card_type.name')  # ✅ updated field name
+    card_type = serializers.CharField(source='card_type.name')  
     unmasked_card_number= serializers.SerializerMethodField()
+    user_email = serializers.EmailField(source='user.email', read_only=True)
 
 
     def get_card_number(self, obj):
@@ -50,12 +54,22 @@ class CreditCardSerializer(serializers.ModelSerializer):
     
     def get_unmasked_card_number(self, obj):
         user = self.context['request'].user
-        if user.is_staff or getattr(user, 'is_support', False):
+        admin_view = self.context.get('admin_view',False)
+        if (obj.is_single_use and obj.user == user) or admin_view or user.is_staff or getattr(user, 'is_support', False):
             return obj.card_number
         return None
     
     class Meta:
         model = CreditCard
-        fields = ['id', 'card_Type', 'card_number','unmasked_card_number', 'expiry_date', 'credit_limit', 'available_credit', 'status', 'nickname']
+        fields = ['id', 'card_type', 'card_number','unmasked_card_number', 'expiry_date', 'credit_limit','available_credit', 'status', 'nickname','is_single_use', 'created_at', 'updated_at', 'user_email']
+        read_only_fields = ['id', 'card_type', 'card_number', 'unmasked_card_number','expiry_date', 'credit_limit', 'available_credit', 'status','created_at', 'updated_at', 'user_email']
+
+    def to_representation(self, ret):
+        ret = super().to_representation(ret)
+        admin_view = self.context.get('admin_view', False)
+        if not admin_view:
+            ret.pop('user_email', None)
+        return ret
+        
 
 

@@ -27,16 +27,36 @@ class CardViewSet(viewsets.ModelViewSet):
     def get_permissions(self):
         if self.action in ['create_card']:
             return [IsAuthenticated()]
-        elif self.action in ['approve_card_request', 'freeze', 'unfreeze']:
+        elif self.action in ['approve_card_request', 'freeze', 'unfreeze', 'unblock','list_admin_cards']:
             return [IsSupportStaff()]
-        elif self.action in ['block']:
+        elif self.action in ['block','retrieve', 'list']:
             return [IsSupportOrCardOwner()]
         return super().get_permissions()
 
     def get_queryset(self):
+        if self.action == 'list_admin_cards':
+            return CreditCard.objects.all()
         if self.request.user.is_staff or getattr(self.request.user,'is_support', False):
             return CreditCard.objects.all()
         return CreditCard.objects.filter(user=self.request.user, status__in=['active', 'frozen'])
+    
+    def retrieve(self, request, *args, **kwargs):
+        try:
+            instance = self.get_object()
+            serializer = self.get_serializer(instance)
+            return Response(serializer.data, status=status.HTTP_200_OK)
+        except CreditCard.DoesNotExist:
+            return Response({"error": "Card not found"},status=status.HTTP_404_NOT_FOUND)
+    
+    def list(self, request,*args,**kwargs):
+        queryset = self.get_queryset()
+        page = self.paginate_queryset(queryset)
+        if page is not None:
+            serializer = self.get_serializer(page, many=True)
+            return self.get_paginated_response(serializer.data)
+        serializer = self.get_serializer(queryset, many=True)
+        return Response(serializer.data, status=status.HTTP_200_OK)
+        
 
     @action(detail=False, methods=['post'])
     @csrf_exempt
@@ -194,6 +214,23 @@ class CardViewSet(viewsets.ModelViewSet):
             return Response({"message": "Card Unblocked Successfully"}, status=status.HTTP_200_OK)
         except CreditCard.DoesNotExist:
             return Response({"error":"Card not found"}, status=status.HTTP_404_NOT_FOUND)
+        
+
+    @action(detail=False, methods=['get'],url_path='list_admin_cards')
+    @swagger_auto_schema(responses={200: CreditCardSerializer(many=True)})
+    def list_admin_cards(self, request):
+        try:
+            queryset = self.get_queryset()
+            page = self.paginate_queryset(queryset)
+            if page is not None:
+                serializer = self.get_serializer(page, many=True,context={'request': request, 'admin_view': True})
+                return self.get_paginated_response(serializer.data)
+            serializer = self.get_serializer(queryset, many=True, context={'request': request, 'admin_view': True})
+            return Response(serializer.data, status=status.HTTP_200_OK)
+        except Exception as e:
+            from sentry_sdk import capture_exception
+            capture_exception(e)
+            return Response({"error": "Internal Server Error"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
 
