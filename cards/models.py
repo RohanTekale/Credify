@@ -2,6 +2,7 @@ from django.db import models
 from django.conf import settings
 from django.utils import timezone
 from django.core.validators import MinValueValidator
+from datetime import timedelta
 
 
 class CardType(models.Model):
@@ -63,5 +64,38 @@ class CardRequest(models.Model):
 
     def __str__(self):
         return f"{self.card_type.name} request for {self.user.username}"
+    
+class Subscription(models.Model):
+    SUBSCRIPTION_STATUS =(
+        ('active', 'Active'),
+        ('expired', 'Expired'),
+        ('cancelled', 'Cancelled'),
+    )
+
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE)
+    card = models.ForeignKey(CreditCard, on_delete=models.CASCADE, related_name='subscriptions')
+    card_type = models.ForeignKey(CardType, on_delete=models.PROTECT)
+    status = models.CharField(max_length=20,choices=SUBSCRIPTION_STATUS, default='active')
+    is_limited_time = models.BooleanField(default=False)
+    subscription_start = models.DateTimeField(auto_now_add=True)
+    subscription_end= models.DateTimeField(null=True, blank=True)
+    subscription_fee = models.DecimalField(max_digits=10, decimal_places=2, validators=[MinValueValidator(0)])
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        indexes= [
+            models.Index(fields=['user']),
+            models.Index(fields=['card']),
+            models.Index(fields=['status']),
+        ]
+
+    def __str__(self):
+        return f"{self.card_type.name} subscription for {self.user.username}"
+    
+    def save(self,*args, **kwargs):
+        if self.is_limited_time and not self.subscription_end:
+            self.subscription_end = self.subscription_start + timedelta(days=30)
+        super().save(*args,**kwargs)
 
 

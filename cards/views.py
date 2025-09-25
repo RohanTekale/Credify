@@ -5,8 +5,8 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.parsers import FormParser, JSONParser, MultiPartParser
 from drf_yasg.utils import swagger_auto_schema
 from django.views.decorators.csrf import csrf_exempt
-from .models import CreditCard, CardType, CardRequest
-from .serializers import CardCreateSerializer, CreditCardSerializer, CardStatusSerializer
+from .models import CreditCard, CardType, CardRequest,Subscription
+from .serializers import CardCreateSerializer, CreditCardSerializer, CardStatusSerializer, SubscriptionSerializer, SubscriptionUpgradeSerializer
 from .permissions import IsSupportOrCardOwner
 from users.permissions import IsSupportStaff
 from django.contrib.auth import get_user_model
@@ -14,6 +14,7 @@ from .utils import generate_card_number, generate_cvv, calculate_expiry_date,cal
 from django.contrib.auth.hashers import make_password
 from notifications.tasks import notify_admin_card_approve,send_card_status_notification
 from django.utils import timezone
+from django.db import transaction
 
 User = get_user_model()
 
@@ -233,5 +234,112 @@ class CardViewSet(viewsets.ModelViewSet):
             return Response({"error": "Internal Server Error"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
+class SubscriptionViewSet(viewsets.ModelViewSet):
+    queryset = Subscription.objects.all()
+    serializer_class = SubscriptionSerializer
+    permission_classes= [IsAuthenticated]
+    parser_classes = [FormParser, JSONParser,MultiPartParser]
 
+    def get_queryset(self):
+        return Subscription.objects.filter(user=self.request.user)
+    
+    @action(detail=False, methods=['post'])
+    @swagger_auto_schema(responses={201:"Subscription created successfully"})
+    def create_subscription(self,request):
+        card_id = request.data.get('card_id')
+        card_type_name = request.data.get('card_type')
+        is_limited_time = request.data.get('is_limited_time', False)
+
+
+        try:
+            card = CreditCard.objects.get(id=card_id, user=request.user)
+            card_type = CardType.objects.get(name=card_type_name)
+        except CreditCard.DoesNotExist:
+            return Response({"error": "Card not found or not owned by user"},status=status.HTTP_404_NOT_FOUND)
+        except CardType.DoesNotExist:
+            return Response({"error": "Invalid card type"},status=status.HTTP_400_BAD_REQUEST)
         
+        if card.card_type == card_type:
+            return Response({"error": "Card already has this type"},status=status.HTTP_400_BAD_REQUEST)
+        if Subscription.objects.filter(card=card, status='active').exists():
+            return Response({"error": "Card already has an active subscription"}, status=status.HTTP_400_BAD_REQUEST)
+        
+        subscription_fees = {
+        'Silver': 5.00,
+        'Premium': 10.00,
+        'Gold': 20.00,
+        'Platinum': 50.00,
+        }
+        
+        subscription_fee = subscription_fees.get(card_type.name, 0.00)
+
+        try:
+            with transaction.atomic():
+                subscription = Subscription.objects.create(
+                    user= request.user,
+                    card=card,
+                    card_type=card_type,
+                    subscription_fee=subscription_fee,
+                    is_limited_time=is_limited_time
+                )
+                card.card_type=card_type
+                card.expiry_date = calculate_expiry_date(card_type)
+                card.credit_limit = calculate_credit_limit(card_type, request.user)
+                card.available_credit = card.credit_limit
+                card.save()
+
+                return Response(SubscriptionSerializer(subscription,context={'request':request}).data, status=status.HTTP_201_CREATED)
+        except Exception as e:
+            from sentry_sdk import capture_exception
+            capture_exception(e)
+            return Response({"error":str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+    
+    @action(detail=False, methods=['post'])
+    @swagger_auto_schema(responses={200:"Card upgraded successfully"})
+    def upgrade(self, request):
+        serializer = SubscriptionUpgradeSerializer(data=request.data, context={'request':request})
+        if serializer.is_valid():
+            card_id = serializer.validated_data['card_id']
+            new_card_type = serializer.validated_data['new_card_type']
+            is_limited_time = serializer.validated_data['is_limiited_time']
+
+            subscription_fees = {
+                'Silver': 5.00,
+                'Premium': 10.00,
+                'Gold': 20.00,
+                'Platinum': 50.00,
+            }
+            subscription_fee = subscription_fees.get(new_card_type.name, 0.00)
+
+            try:
+                with transaction.atomic():
+                    card = CreditCard.objects.get(id=card_id, user=request.user)
+                    Subscription.objects.filter(card=card, status='active').update(status='cancelled', updated_at=timezone.now())
+
+                    subscription = Subscription.objects.create(
+                        user=request.user,
+                        card=card,
+                        card_type=new_card_type,
+                        subscription_fee=subscription_fee,
+                        is_limited_time=is_limited_time
+                    )
+
+                    card.card_type = new_card_type
+                    card.expiry_date = calculate_expiry_date(new_card_type)
+                    card.credit_limit = calculate_credit_limit(new_card_type,request.user)
+                    card.available_credit = card.credit_limit
+                    card.save()
+
+                    return Response(
+                        SubscriptionSerializer(subscription, context={'request':request}).data,status=status.HTTP_200_OK
+                    )
+            except CreditCard.DoesNotExist:
+                return Response({"error":"card not found"}, status=status.HTTP_404_NOT_FOUND)
+            except Exception as e:
+                from sentry_sdk import capture_exception
+                capture_exception(e)
+                return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+        return Response(serializer.errors,status=status.HTTP_400_BAD_REQUEST)
+
+
+       

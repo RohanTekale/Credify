@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from .models import CreditCard, CardType
+from .models import CreditCard, CardType,Subscription
 from django.contrib.auth import get_user_model
 from django.utils import timezone
 
@@ -71,5 +71,62 @@ class CreditCardSerializer(serializers.ModelSerializer):
             ret.pop('user_email', None)
         return ret
         
+class SubscriptionSerializer(serializers.ModelSerializer):
+    card_type = serializers.CharField(source='card_type.name')
+    user_email = serializers.EmailField(source = 'user.email', read_only=True)
 
 
+    class Meta:
+        model = Subscription
+        fields = ['id', 'user_email', 'card', 'card_type', 'status', 'is_limited_time', 
+                 'subscription_start', 'subscription_end', 'subscription_fee', 'created_at', 'updated_at']
+        read_only_fields = ['id', 'user_email', 'card', 'status', 'subscription_start', 
+                           'subscription_end', 'subscription_fee', 'created_at', 'updated_at']
+
+    def validate(self,data):
+        user = self.context['request'].user
+        card = data.get('card')
+        card_type = CardType.objects.get(name=data.get('card_type').get('name'))
+
+
+        if card.user != user:
+            raise serializers.ValidationError("You can only subscribe to your own card.")
+        if Subscription.objects.filter(card=card, status='active').exists():
+            raise serializers.ValidationError("This card already has an active subscription.")
+        return data
+
+class SubscriptionUpgradeSerializer(serializers.ModelSerializer):
+    card_id = serializers.IntegerField()
+    new_card_type = serializers.CharField(max_length=50)
+    is_limited_time = serializers.BooleanField(default=False)
+
+
+    def validate_card_id(self, value):
+        try:
+            card = CreditCard.objects.get(id=value)
+        except CreditCard.DoesNotExist:
+            raise serializers.ValidationError("card not found")
+        if card.user != self.context['request'].user:
+            raise serializers.ValidationError("You can only upgrade your own card")
+        return value
+    
+    def validate_new_card_type(self,value):
+        try:
+            card_type =  CardType.objects.get(name=value)
+        except CardType.DoesNotExist:
+            raise serializers.ValidationError("invalid card type")
+        return card_type
+    
+    def validate(self, data):
+        card = CreditCard.objects.get(id=data['card_id'])
+        new_card_type= data['new_card_type']
+
+        if card.card_type == new_card_type:
+            raise serializers.ValidationError("New card type must be different from current card type")
+        if new_card_type.requires_admin_approval:
+            raise serializers.ValidationError("Upgrading to this card type requires admin approval")
+        return data
+        
+        
+
+        
