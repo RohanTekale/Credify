@@ -28,23 +28,27 @@ class CardCreateSerializer(serializers.Serializer):
     
     def validate(self, data):
         user = self.context['request'].user
+        card_type = data['card_type']
         if user.kyc_status != 'verified':
             raise serializers.ValidationError("KYC verification is required")
         if CreditCard.objects.filter(user=user, status__in=['active', 'frozen']).count() >= 3:
             raise serializers.ValidationError("Maximum 3 active or frozen cards allowed")
         if not user.is_active:
             raise serializers.ValidationError("User account is deactivated")
+        if card_type.min_income_for_permanent > user.income:
+            raise serializers.ValidationError(f"Income too low for permanent {card_type.name} card ")
         return data
 
 class CardStatusSerializer(serializers.ModelSerializer):
     class Meta:
         model = CreditCard
-        fields = ['status']
+        fields = ['id','status']
         read_only_fields = ['status']
 
 class CreditCardSerializer(serializers.ModelSerializer):
     card_number = serializers.SerializerMethodField()
-    card_type = serializers.CharField(source='card_type.name')  
+    base_card_type = serializers.CharField(source= 'base_card_type.name')
+    effective_card_type = serializers.CharField(source='effective_card_type.name')
     unmasked_card_number= serializers.SerializerMethodField()
     user_email = serializers.EmailField(source='user.email', read_only=True)
 
@@ -61,8 +65,8 @@ class CreditCardSerializer(serializers.ModelSerializer):
     
     class Meta:
         model = CreditCard
-        fields = ['id', 'card_type', 'card_number','unmasked_card_number', 'expiry_date', 'credit_limit','available_credit', 'status', 'nickname','is_single_use', 'created_at', 'updated_at', 'user_email']
-        read_only_fields = ['id', 'card_type', 'card_number', 'unmasked_card_number','expiry_date', 'credit_limit', 'available_credit', 'status','created_at', 'updated_at', 'user_email']
+        fields = ['id', 'base_card_type', 'effective_card_type', 'card_number','unmasked_card_number', 'expiry_date', 'credit_limit','original_credit_limit','available_credit', 'status', 'nickname','is_single_use', 'created_at', 'updated_at', 'user_email']
+        read_only_fields = ['id', 'base_card_type', 'effective_card_type', 'card_number', 'unmasked_card_number','expiry_date', 'credit_limit', 'original_credit_limit','available_credit', 'status','created_at', 'updated_at', 'user_email']
 
     def to_representation(self, ret):
         ret = super().to_representation(ret)
@@ -70,30 +74,50 @@ class CreditCardSerializer(serializers.ModelSerializer):
         if not admin_view:
             ret.pop('user_email', None)
         return ret
+    
+class SubscriptionCreateSerializer(serializers.Serializer):
+    card_id = serializers.IntegerField()
+    card_type = serializers.CharField(max_length=50)
+    is_limited_time = serializers.BooleanField(default=False)
+
+    def validate_card_id(self, value):
+        try:
+            card = CreditCard.objects.get(id=value)
+        except CreditCard.DoesNotExist:
+            raise serializers.ValidationError("Card not found")
+        if card.user != self.context['request'].user:
+            raise serializers.ValidationError("You can only subscribe to your own card")
+        return value
+    
+    def validate_card_type(self, value):
+        try:
+            card_type = CardType.objects.get(name=value)
+        except CardType.DoesNotExist:
+            raise serializers.ValidationError("Invalid card type")
+        return card_type
+    
+    def validate(self, data):
+        card = CreditCard.objects.get(id=data['card_id'])
+        card_type = data['card_type']
+        if  card.base_card_type ==card_type:
+            raise serializers.ValidationError("Subscription card type must differ from base card type")
+        if card.status!='active':
+            raise serializers.ValidationError("Card must be active to subscribe")
+        if Subscription.objects.filter(card=card,status='active').exists():
+            raise serializers.ValidationError("Card already has an active subscription")
+        return data
         
 class SubscriptionSerializer(serializers.ModelSerializer):
     card_type = serializers.CharField(source='card_type.name')
     user_email = serializers.EmailField(source = 'user.email', read_only=True)
-
+    card_base_type = serializers.CharField(source='card.base_card_type.name', read_only=True)
 
     class Meta:
         model = Subscription
-        fields = ['id', 'user_email', 'card', 'card_type', 'status', 'is_limited_time', 
+        fields = ['id', 'user_email', 'card', 'card_base_type','card_type', 'status', 'is_limited_time', 
                  'subscription_start', 'subscription_end', 'subscription_fee', 'created_at', 'updated_at']
-        read_only_fields = ['id', 'user_email', 'card', 'status', 'subscription_start', 
+        read_only_fields = ['id', 'user_email', 'card', 'card_base_type','status', 'subscription_start', 
                            'subscription_end', 'subscription_fee', 'created_at', 'updated_at']
-
-    def validate(self,data):
-        user = self.context['request'].user
-        card = data.get('card')
-        card_type = CardType.objects.get(name=data.get('card_type').get('name'))
-
-
-        if card.user != user:
-            raise serializers.ValidationError("You can only subscribe to your own card.")
-        if Subscription.objects.filter(card=card, status='active').exists():
-            raise serializers.ValidationError("This card already has an active subscription.")
-        return data
 
 class SubscriptionUpgradeSerializer(serializers.ModelSerializer):
     card_id = serializers.IntegerField()

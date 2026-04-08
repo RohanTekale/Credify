@@ -6,10 +6,13 @@ from cards.models import CreditCard
 
 
 class Transaction(models.Model):
+    STATUS_PENDING = 'pending'
+    STATUS_SUCCESS = 'success'
+    STATUS_FAILED = 'failed'
     TRANSACTION_STATUS = (
-        ('pending', 'Pending'),
-        ('success', 'Success'),
-        ('failed', 'Failed'),
+        (STATUS_PENDING, 'Pending'),
+        (STATUS_SUCCESS, 'Success'),
+        (STATUS_FAILED, 'Failed'),
     )
     card = models.ForeignKey(CreditCard, on_delete=models.CASCADE, related_name='transactions')
     amount = models.DecimalField(max_digits=10, decimal_places=2, validators=[MinValueValidator(0)])
@@ -20,10 +23,12 @@ class Transaction(models.Model):
 
 
     class Meta:
+        ordering = ['-created_at']
         indexes = [
             models.Index(fields=['card', 'created_at']),
             
         ]
+    
     
 
     def __str__(self):

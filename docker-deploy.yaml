@@ -1,3 +1,4 @@
+
 services:
   web:
     build:
@@ -9,43 +10,23 @@ services:
     environment:
       DJANGO_SETTINGS_MODULE: credify.settings
       REDIS_URL: redis://cache:6379/0
-    # ports:
-    #   - "8000:8000"
-    volumes:
-      - .:/app
+    ports:
+      - "8000:8000"
     depends_on:
       - cache
+      - db
     command: >
       sh -c "python manage.py migrate &&
              python manage.py collectstatic --noinput &&
-             python manage.py create_superuser &&
              gunicorn credify.wsgi:application --bind 0.0.0.0:8000"
-    deploy:
-      resources:
-        limits:
-          cpus: '0.50'
-          memory: 1024M
-        reservations:
-          cpus: '0.25'
-          memory: 512M
+    restart: always
 
   cache:
     image: redis:7
     ports:
       - "6379:6379"
-    deploy:
-      resources:
-        limits:
-          cpus: '0.25'
-          memory: 128M
-        reservations:
-          cpus: '0.10'
-          memory: 64M
-      restart_policy:
-        condition: on-failure
-        delay: 5s
-        max_attempts: 3
-  
+    restart: always
+
   db:
     image: postgres:14
     container_name: credify_postgres
@@ -56,14 +37,7 @@ services:
       - postgres_data:/var/lib/postgresql/data
     ports:
       - "5432:5432"
-    deploy:
-      resources:
-        limits:
-          cpus: '0.50'
-          memory: 1024M
-        reservations:
-          cpus: '0.25'
-          memory: 512M
+
   nginx:
     image: nginx:latest
     ports:
@@ -74,6 +48,7 @@ services:
       - ./media:/app/media
     depends_on:
       - web
+    restart: always
 
   metabase:
     image: metabase/metabase:latest
@@ -96,15 +71,8 @@ services:
       - "3000:3000"
     volumes:
       - metabase_data:/metabase-data
-    deploy:
-      resources:
-        limits:
-          cpus: '0.50'
-          memory: 1024M
-        reservations:
-          cpus: '0.25'
-          memory: 512M
-  
+    restart: always
+
   celery:
     build:
       context: .
@@ -118,16 +86,7 @@ services:
     depends_on:
       - cache
       - db
-    volumes:
-      - .:/app
-    deploy:
-      resources:
-        limits:
-          cpus: '0.50'
-          memory: 512M
-        reservations:
-          cpus: '0.25'
-          memory: 256M
+    restart: always
 
   celery-beat:
     build:
@@ -142,22 +101,8 @@ services:
     depends_on:
       - cache
       - db
-    volumes:
-      - .:/app
-    deploy:
-      resources:
-        limits:
-          cpus: '0.25'
-          memory: 256M
-        reservations:
-          cpus: '0.10'
-          memory: 128M
-
-
-
+    restart: always
 
 volumes:
   postgres_data:
   metabase_data:
-
-
