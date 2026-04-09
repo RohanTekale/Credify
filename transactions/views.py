@@ -5,6 +5,7 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.parsers import FormParser, JSONParser, MultiPartParser
 from drf_yasg.utils import swagger_auto_schema
 from django.views.decorators.csrf import csrf_exempt
+from django.db import transaction 
 from .models import Transaction
 from cards.models import CreditCard
 from .serializers import TransactionSerializer
@@ -35,40 +36,50 @@ class TransactionViewSet(viewsets.ModelViewSet):
             return Response({"error": serializer.errors}, status=status.HTTP_400_BAD_REQUEST)
 
         try:
-            card_id = serializer.validated_data['card_id']
-            amount = Decimal(str(serializer.validated_data['amount']))  # Convert to Decimal
-            description = serializer.validated_data.get('description', '')
+            with transaction.atomic():
 
-            card = CreditCard.objects.get(id=card_id, user=request.user)
-            if card.status != 'active':
-                logger.warning(f"Card {card_id} is not active for user {request.user.id}")
-                return Response({"error": "Card is not active"}, status=status.HTTP_400_BAD_REQUEST)
-            
-            fee = amount * Decimal(str(card.card_type.transaction_fee)) / Decimal('100')
-            total_amount = amount + fee
+                card_id = serializer.validated_data['card_id']
+                amount = Decimal(str(serializer.validated_data['amount']))  # Convert to Decimal
+                description = serializer.validated_data.get('description', '')
 
-            if total_amount > card.available_credit:
-                logger.warning(f"Insufficient credit for card {card_id}: {total_amount} > {card.available_credit}")
-                return Response({"error": "Insufficient available credit"}, status=status.HTTP_400_BAD_REQUEST)
-            
-            transaction = Transaction.objects.create(
-                card=card,
-                amount=amount,
-                fee=fee,
-                status='success' if not card.is_single_use else 'pending',
-                description=description
-            )
+                card = (CreditCard.objects.select_for_update().select_related("effective_card_type").get(id=card_id,user=request.user))
+                if card.status != 'active':
+                    logger.warning(f"Card {card_id} is not active for user {request.user.id}")
+                    return Response({"error": "Card is not active"}, status=status.HTTP_400_BAD_REQUEST)
+                
+                fee = amount * Decimal(str(card.effective_card_type.transaction_fee)) / Decimal('100')
+                total_amount = amount + fee
 
-            card.available_credit -= total_amount
-            if card.is_single_use:
-                card.status = 'blocked'
-            card.save()
+                if total_amount > card.available_credit:
+                    logger.warning(f"Insufficient credit for card {card_id}: {total_amount} > {card.available_credit}")
+                    return Response({"error": "Insufficient available credit"}, status=status.HTTP_400_BAD_REQUEST)
+                
+                txn = Transaction.objects.create(
+                    card=card,
+                    amount=amount,
+                    fee=fee,
+                    status='pending',
+                    description=description
+                )
 
-            logger.info(f"Transaction {transaction.id} created for card {card_id} by user {request.user.id}")
-            return Response(
-                TransactionSerializer(transaction).data,
-                status=status.HTTP_201_CREATED
-            )
+                card.available_credit -= total_amount
+                card.save(update_fields=['available_credit'])
+
+                try:
+                    txn.status = 'success'
+                except Exception:
+                    txn.status='failed'
+                txn.save(update_fields=['status'])
+
+                if card.is_single_use:
+                    card.status = 'blocked'
+                card.save(update_fields=['available_credit', 'status'])
+
+                logger.info(f"Transaction {txn.id} created for card {card_id} by user {request.user.id}")
+                return Response(
+                    TransactionSerializer(txn).data,
+                    status=status.HTTP_201_CREATED
+                )
         except CreditCard.DoesNotExist:
             logger.error(f"Card {card_id} not found for user {request.user.id}")
             return Response({"error": "Card not found"}, status=status.HTTP_400_BAD_REQUEST)
