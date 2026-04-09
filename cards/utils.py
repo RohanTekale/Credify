@@ -47,7 +47,7 @@ def calculate_credit_limit(card_type, user):
 
     if user.kyc_status != 'verified':
         return 0.00
-    base_limit = card_type.default_credit_limit
+    base_limit = float(card_type.default_credit_limit)
     if user.income is None:
         return base_limit
     

@@ -65,7 +65,7 @@ class LoginSerializer(serializers.Serializer):
 class UserProfileSerializer(serializers.ModelSerializer):
     class Meta:
         model = User
-        fields = ['username', 'email', 'phone_number', 'address', 'kyc_status', 'is_email_verified']
+        fields = ['id', 'username', 'email', 'phone_number', 'address', 'kyc_status', 'is_email_verified','is_staff','is_superuser', 'is_support']
         read_only_fields = ['kyc_status', 'is_email_verified']
 
 class KYCUploadserializer(serializers.ModelSerializer):
