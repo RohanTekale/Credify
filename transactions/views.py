@@ -42,34 +42,42 @@ class TransactionViewSet(viewsets.ModelViewSet):
                 amount = Decimal(str(serializer.validated_data['amount']))  # Convert to Decimal
                 description = serializer.validated_data.get('description', '')
 
-                card = (CreditCard.objects.select_for_update().select_related("card_type").get(id=card_id,user=request.user))
+                card = (CreditCard.objects.select_for_update().select_related("effective_card_type").get(id=card_id,user=request.user))
                 if card.status != 'active':
                     logger.warning(f"Card {card_id} is not active for user {request.user.id}")
                     return Response({"error": "Card is not active"}, status=status.HTTP_400_BAD_REQUEST)
                 
-                fee = amount * Decimal(str(card.card_type.transaction_fee)) / Decimal('100')
+                fee = amount * Decimal(str(card.effective_card_type.transaction_fee)) / Decimal('100')
                 total_amount = amount + fee
 
                 if total_amount > card.available_credit:
                     logger.warning(f"Insufficient credit for card {card_id}: {total_amount} > {card.available_credit}")
                     return Response({"error": "Insufficient available credit"}, status=status.HTTP_400_BAD_REQUEST)
                 
-                transaction = Transaction.objects.create(
+                txn = Transaction.objects.create(
                     card=card,
                     amount=amount,
                     fee=fee,
-                    status='success' if not card.is_single_use else 'pending',
+                    status='pending',
                     description=description
                 )
 
                 card.available_credit -= total_amount
+                card.save(update_fields=['available_credit'])
+
+                try:
+                    txn.status = 'success'
+                except Exception:
+                    txn.status='failed'
+                txn.save(update_fields=['status'])
+
                 if card.is_single_use:
                     card.status = 'blocked'
                 card.save(update_fields=['available_credit', 'status'])
 
-                logger.info(f"Transaction {transaction.id} created for card {card_id} by user {request.user.id}")
+                logger.info(f"Transaction {txn.id} created for card {card_id} by user {request.user.id}")
                 return Response(
-                    TransactionSerializer(transaction).data,
+                    TransactionSerializer(txn).data,
                     status=status.HTTP_201_CREATED
                 )
         except CreditCard.DoesNotExist:

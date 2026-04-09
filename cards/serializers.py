@@ -29,14 +29,16 @@ class CardCreateSerializer(serializers.Serializer):
     def validate(self, data):
         user = self.context['request'].user
         card_type = data['card_type']
+        income = data['income']
         if user.kyc_status != 'verified':
             raise serializers.ValidationError("KYC verification is required")
         if CreditCard.objects.filter(user=user, status__in=['active', 'frozen']).count() >= 3:
             raise serializers.ValidationError("Maximum 3 active or frozen cards allowed")
         if not user.is_active:
             raise serializers.ValidationError("User account is deactivated")
-        if card_type.min_income_for_permanent > user.income:
-            raise serializers.ValidationError(f"Income too low for permanent {card_type.name} card ")
+        if card_type.min_income_for_permanent > 0:
+            if income < card_type.min_income_for_permanent:
+                raise serializers.ValidationError(f"Income too low for permanent {card_type.name} card ")
         return data
 
 class CardStatusSerializer(serializers.ModelSerializer):

@@ -95,11 +95,13 @@ class CardViewSet(viewsets.ModelViewSet):
                 card_number, hashed_number = generate_card_number()
                 card = CreditCard.objects.create(
                     user=user,
-                    card_type=card_type,
+                    base_card_type=card_type,
+                    effective_card_type=card_type,
                     card_number=hashed_number,
                     cvv=make_password(generate_cvv()),
                     expiry_date=calculate_expiry_date(card_type),
                     credit_limit=credit_limit,
+                    original_credit_limit=credit_limit,
                     available_credit=credit_limit,
                     is_single_use=is_single_use
                 )
@@ -135,11 +137,13 @@ class CardViewSet(viewsets.ModelViewSet):
             card_number, hashed_number = generate_card_number()
             card = CreditCard.objects.create(
                 user=card_request.user,
-                card_type=card_request.card_type,
+                base_card_type=card_request.card_type,
+                effective_card_type=card_request.card_type,
                 card_number=hashed_number,
                 cvv=make_password(generate_cvv()),
                 expiry_date=calculate_expiry_date(card_request.card_type),
                 credit_limit=credit_limit,
+                original_credit_limit=credit_limit,
                 available_credit=credit_limit,
                 is_single_use=card_request.is_single_use
             )
