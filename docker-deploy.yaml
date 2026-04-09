@@ -1,5 +1,3 @@
-version: "3.8"
-
 services:
   web:
     build:
@@ -106,6 +104,54 @@ services:
         reservations:
           cpus: '0.25'
           memory: 512M
+  
+  celery:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    env_file:
+      - .env
+    environment:
+      DJANGO_SETTINGS_MODULE: credify.settings
+      REDIS_URL: redis://cache:6379/0
+    command: celery -A credify worker -l info
+    depends_on:
+      - cache
+      - db
+    volumes:
+      - .:/app
+    deploy:
+      resources:
+        limits:
+          cpus: '0.50'
+          memory: 512M
+        reservations:
+          cpus: '0.25'
+          memory: 256M
+
+  celery-beat:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    env_file:
+      - .env
+    environment:
+      DJANGO_SETTINGS_MODULE: credify.settings
+      REDIS_URL: redis://cache:6379/0
+    command: celery -A credify beat -l info --scheduler django_celery_beat.schedulers:DatabaseScheduler
+    depends_on:
+      - cache
+      - db
+    volumes:
+      - .:/app
+    deploy:
+      resources:
+        limits:
+          cpus: '0.25'
+          memory: 256M
+        reservations:
+          cpus: '0.10'
+          memory: 128M
 
 
 

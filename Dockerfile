@@ -24,8 +24,13 @@
         libffi-dev \
         && rm -rf /var/lib/apt/lists/*
     
+    RUN useradd -m celeryuser
     COPY --from=builder /install /usr/local
     COPY . .
+    
+
+    RUN chown -R celeryuser:celeryuser /app
+    USER celeryuser
     
     ENV PYTHONUNBUFFERED=1
     ENV DJANGO_SETTINGS_MODULE=credify.settings

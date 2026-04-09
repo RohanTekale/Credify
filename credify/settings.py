@@ -15,6 +15,8 @@ import os
 import logging
 import environ
 import sentry_sdk
+from celery.schedules import crontab
+
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
 
@@ -47,6 +49,7 @@ INSTALLED_APPS = [
     'rest_framework_simplejwt',
     'corsheaders',
     'drf_yasg',
+    'django_celery_beat',
     'cloudinary',
     'credify_core.apps.CredifycoreConfig',
     'users.apps.UsersConfig',
@@ -62,6 +65,7 @@ MIDDLEWARE = [
     "django.contrib.sessions.middleware.SessionMiddleware",
     "django.middleware.common.CommonMiddleware",
     "django.middleware.csrf.CsrfViewMiddleware",
+    "corsheaders.middleware.CorsMiddleware",
     "django.contrib.auth.middleware.AuthenticationMiddleware",
     "django.contrib.messages.middleware.MessageMiddleware",
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
@@ -198,6 +202,7 @@ CSRF_TRUSTED_ORIGINS = env.list("CSRF_TRUSTED_ORIGINS",default=["http://localhos
 CORS_ALLOWED_ORIGINS =[
     "http://localhost:3000",
     "http://127.0.0.1:3000",
+    "http://localhost:5173",
 ]
 CORS_ALLOW_METHODS = ("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS")
 CORS_ALLOW_CREDENTIALS = True
@@ -220,11 +225,27 @@ CLOUDINARY = {
 }
 
 # Celery configuration for background tasks
-CELERY_BROKER_URL = env('CELERY_BROKER_URL')
-CELERY_RESULT_BACKEND = env('CELERY_RESULT_BACKEND')
+CELERY_BROKER_URL = env('CELERY_BROKER_URL', default='redis://cache:6379/0')
+CELERY_RESULT_BACKEND = env('CELERY_RESULT_BACKEND', default='redis://cache:6379/0')
 CELERY_ACCEPT_CONTENT = ['json']
 CELERY_TASK_SERIALIZER = 'json'
 CELERY_RESULT_SERIALIZER = 'json'
+CELERY_TASK_DEFAULT_QUEUE = 'deafult'
+CELERY_TASK_TRACK_STARTED = True
+CELERY_TASK_TIME_LIMIT = 30 * 60
+CELERY_BROKER_CONNECTION_RETRY_ON_STARTUP = True 
+CELERY_IMPORTS = ('users.tasks', 'cards.tasks', 'notifications.tasks')
+
+CELERY_BEAT_SCHEDULE = {
+    'auto-freeze-inactive-cards':{
+        'task': 'cards.tasks.auto_freeze_inactive_cards',
+        'schedule': crontab(hour=0, minute=0),
+    },
+    'auto-block-inactive-or-deleted-cards': {
+        'task': 'cards.tasks.auto_block_inactive_or_deleted_cards',
+        'schedule': crontab(hour=1, minute=0),
+    }
+}
 
 # Email configuration for SendGrid
 EMAIL_BACKEND = 'django.core.mail.backends.smtp.EmailBackend'

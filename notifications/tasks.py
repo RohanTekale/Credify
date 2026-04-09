@@ -9,3 +9,6 @@ User = get_user_model()
 @shared_task
 def notify_admin_card_approve(card_request_id, user_id):
     pass
+@shared_task
+def send_card_status_notification(card_request_id, user_id):
+    pass
