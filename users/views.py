@@ -12,7 +12,7 @@ from .models import User,KYCReviewLog,ReactivationRequest
 from .serializers import (
     UserRegistrationSerializer,LoginSerializer,UserProfileSerializer, KYCUploadserializer, KYCReviewSerializer, PasswordChangeSerializer,ForgotPasswordSerializer,ResetPasswordSerializer,ReactivationRequestSerializer,ReactivationReviewSerializer)
 from .permissions import IsSupportStaff
-from .tasks import send_kyc_notification_email, send_reactivation_notification_email
+from .tasks import send_kyc_notification_email, send_reactivation_notification_email,send_verification_email
 
 @method_decorator(csrf_exempt, name='dispatch')
 class CustomTokenObtainPairView(TokenObtainPairView):
@@ -53,6 +53,7 @@ class UserViewSet(viewsets.ModelViewSet):
         serializer = UserRegistrationSerializer(data=request.data)
         if serializer.is_valid():
             user = serializer.save()
+            send_verification_email.delay(user.id)
             refresh = RefreshToken.for_user(user)
             return Response({
                 "message": "User registered successfully",
@@ -114,12 +115,11 @@ class UserViewSet(viewsets.ModelViewSet):
                 kyc_status=serializer.validated_data['kyc_status'],
                 comments= serializer.validated_data.get('reviewer_comments', '')
             )
-            # send_kyc_notification_email.delay(
-            #     user.email,
-            #     serializer.validated_data['kyc_status'],
-            #     serializer.validated_data.get('reviewer_comments', '')
-
-            # )
+            send_kyc_notification_email.delay(
+                user.email,
+                serializer.validated_data['kyc_status'],
+                serializer.validated_data.get('reviewer_comments', '')
+            )
             return Response({"message": f"KYC status updated to {serializer.validated_data['kyc_status']}"}, status=status.HTTP_200_OK)
         return Response({"error": serializer.errors}, status=status.HTTP_400_BAD_REQUEST) 
 
@@ -175,11 +175,11 @@ class UserViewSet(viewsets.ModelViewSet):
             if reactivation_request.status == 'approved':
                 reactivation_request.user.is_active = True
                 reactivation_request.user.save()
-            # send_reactivation_notification_email.delay(
-            #     reactivation_request.user.email, 
-            #     reactivation_request.status,
-            #     serializer.validated_data.get('admin_comments', '')
-            # )
+            send_reactivation_notification_email.delay(
+                reactivation_request.user.email, 
+                reactivation_request.status,
+                serializer.validated_data.get('admin_comments', '')
+            )
             return Response({"message": f"Reactivation request {reactivation_request.status}"}, status=status.HTTP_200_OK)
         return Response({"error": serializer.errors}, status=status.HTTP_400_BAD_REQUEST)
 
