@@ -37,6 +37,7 @@ INSTALLED_APPS = [
     'rest_framework_simplejwt',
     'corsheaders',
     'drf_yasg',
+    # 'django_filters',
     'django_celery_beat',
     'cloudinary',
     'credify_core.apps.CredifycoreConfig',
@@ -46,6 +47,7 @@ INSTALLED_APPS = [
     'billing.apps.BillingConfig',
     'rewards.apps.RewardsConfig',
     'notifications.apps.NotificationsConfig',
+    'dev_panel',
 ]
 
 MIDDLEWARE = [
@@ -238,11 +240,11 @@ CELERY_BEAT_SCHEDULE = {
 
 # Email configuration for SendGrid
 EMAIL_BACKEND = 'django.core.mail.backends.smtp.EmailBackend'
-EMAIL_HOST = 'smtp.sendgrid.net'
+EMAIL_HOST = 'smtp-relay.brevo.com'
 EMAIL_PORT = 587
 EMAIL_USE_TLS = True
-EMAIL_HOST_USER = 'apikey'
-EMAIL_HOST_PASSWORD = env('SENDGRID_API_KEY')
+EMAIL_HOST_USER = env("BREVO_SMTP_LOGIN")
+EMAIL_HOST_PASSWORD = env('BREVO_SMTP_KEY')
 DEFAULT_FROM_EMAIL = env('DEFAULT_FROM_EMAIL')
 
 

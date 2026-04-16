@@ -1,0 +1,289 @@
+from pathlib import Path
+import os
+import logging
+import environ
+import sentry_sdk
+from celery.schedules import crontab
+
+# Build paths inside the project like this: BASE_DIR / 'subdir'.
+BASE_DIR = Path(__file__).resolve().parent.parent
+
+env = environ.Env()
+environ.Env.read_env(os.path.join(Path(__file__).resolve().parent.parent, '.env'))
+
+
+# Quick-start development settings - unsuitable for production
+# See https://docs.djangoproject.com/en/4.2/howto/deployment/checklist/
+
+# SECURITY WARNING: keep the secret key used in production secret!
+SECRET_KEY = env('SECRET_KEY', default='django-insecure-15oow(rj2-@k@_b_!m5$jcru6=kf8ned@i%0hd^*h9&=l)^ox#')
+
+# SECURITY WARNING: don't run with debug turned on in production!
+DEBUG = env.bool('DEBUG',True)
+
+ALLOWED_HOSTS = ["*"]
+
+
+# Application definition
+
+INSTALLED_APPS = [
+    "django.contrib.admin",
+    "django.contrib.auth",
+    "django.contrib.contenttypes",
+    "django.contrib.sessions",
+    "django.contrib.messages",
+    'django.contrib.staticfiles',
+    'rest_framework',
+    'rest_framework_simplejwt',
+    'corsheaders',
+    'drf_yasg',
+    # 'django_filters',
+    'django_celery_beat',
+    'cloudinary',
+    'credify_core.apps.CredifycoreConfig',
+    'users.apps.UsersConfig',
+    'cards.apps.CardsConfig',
+    'transactions.apps.TransactionsConfig',
+    'billing.apps.BillingConfig',
+    'rewards.apps.RewardsConfig',
+    'notifications.apps.NotificationsConfig',
+    'dev_panel',
+]
+
+MIDDLEWARE = [
+    "django.middleware.security.SecurityMiddleware",
+    "corsheaders.middleware.CorsMiddleware",
+    "django.contrib.sessions.middleware.SessionMiddleware",
+    "django.middleware.common.CommonMiddleware",
+    "django.middleware.csrf.CsrfViewMiddleware",
+    "django.contrib.auth.middleware.AuthenticationMiddleware",
+    "django.contrib.messages.middleware.MessageMiddleware",
+    "django.middleware.clickjacking.XFrameOptionsMiddleware",
+]
+
+ROOT_URLCONF = "credify.urls"
+
+TEMPLATE_DIR=os.path.join(BASE_DIR,'templates')
+
+TEMPLATES = [
+    {
+        "BACKEND": "django.template.backends.django.DjangoTemplates",
+        "DIRS": [TEMPLATE_DIR],
+        "APP_DIRS": True,
+        "OPTIONS": {
+            "context_processors": [
+                "django.template.context_processors.debug",
+                "django.template.context_processors.request",
+                "django.contrib.auth.context_processors.auth",
+                "django.contrib.messages.context_processors.messages",
+            ],
+        },
+    },
+]
+
+WSGI_APPLICATION = "credify.wsgi.application"
+DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
+
+
+# Database
+# https://docs.djangoproject.com/en/4.2/ref/settings/#databases
+
+DATABASES = {
+    "default": {
+        "ENGINE": "django.db.backends.postgresql",
+        "NAME": env("POSTGRES_DB"),
+        "USER": env("POSTGRES_USER"),
+        "PASSWORD": env("POSTGRES_PASSWORD"),
+        "HOST": env("POSTGRES_HOST",default="postgres"),
+        "PORT": env("POSTGRES_PORT", default="5432"),
+        "ATOMIC_REQUESTS": True,
+    }
+}
+
+LOGGING = {
+    "version": 1,
+    "disable_existing_loggers": False,
+    'handlers': {
+        'console': {
+            'class': 'logging.StreamHandler',
+        },
+    },
+    'loggers': {
+        'django': {
+            'handlers': ['console'],
+            'level': os.getenv('DJANGO_LOG_LEVEL', 'INFO'),
+        },
+    },
+
+}
+
+CACHES = {
+    "default": {
+        "BACKEND": "django_redis.cache.RedisCache",
+        "LOCATION": env("REDIS_URL",default="redis://redis:6379/0"),
+        "OPTIONS": {
+            "CLIENT_CLASS": "django_redis.client.DefaultClient",
+            "IGNORE_EXCEPTIONS": True
+        }
+
+    }
+}
+
+
+# Password validation
+# https://docs.djangoproject.com/en/4.2/ref/settings/#auth-password-validators
+
+AUTH_PASSWORD_VALIDATORS = [
+    {
+        "NAME": "django.contrib.auth.password_validation.UserAttributeSimilarityValidator",
+    },
+    {
+        "NAME": "django.contrib.auth.password_validation.MinimumLengthValidator",
+    },
+    {
+        "NAME": "django.contrib.auth.password_validation.CommonPasswordValidator",
+    },
+    {
+        "NAME": "django.contrib.auth.password_validation.NumericPasswordValidator",
+    },
+]
+
+# REST Framework settings
+REST_FRAMEWORK = {
+    'DEFAULT_AUTHENTICATION_CLASSES': (
+        'rest_framework_simplejwt.authentication.JWTAuthentication',
+    ),
+    'DEFAULT_PERMISSION_CLASSES': (
+        'rest_framework.permissions.IsAuthenticated',
+    ),
+    'DEFAULT_PAGINATION_CLASS': 'rest_framework.pagination.LimitOffsetPagination',
+    'PAGE_SIZE': 50,
+    'DEFAULT_VERSIONING_CLASS': 'rest_framework.versioning.NamespaceVersioning',
+    'DEFAULT_RENDERER_CLASSES': ['rest_framework.renderers.JSONRenderer'],
+    'EXCEPTION_HANDLER': "credify_core.utils.credify_exception_handler",
+    'DEFAULT_THROTTLE_CLASSES': (
+        'users.throttles.RequestReactivationOnlyThrottle',  
+    ),
+    'DEFAULT_THROTTLE_RATES': {
+        'anon': '10/hour',  
+    },
+
+
+}
+
+# JWT settings
+from datetime import timedelta
+
+AUTH_USER_MODEL = 'users.User'
+
+SIMPLE_JWT = {
+    'ACCESS_TOKEN_LIFETIME': timedelta(minutes=60),
+    'REFRESH_TOKEN_LIFETIME': timedelta(days=1),
+    'ROTATE_REFRESH_TOKENS': True,
+    'BLACKLIST_AFTER_ROTATION': True,
+    'AUTH_HEADER_TYPES': ('Bearer',),
+
+}
+
+# CORS settings for nginx integration
+CSRF_TRUSTED_ORIGINS = env.list("CSRF_TRUSTED_ORIGINS",default=["http://localhost:8080","http://localhost:5173"])
+
+# CORS settings for frontend integration
+CORS_ALLOWED_ORIGINS =[
+    "http://localhost:3000",
+    "http://127.0.0.1:3000",
+    "http://localhost:5173",
+]
+CORS_ALLOW_ALL_ORIGINS = False
+CORS_ALLOW_METHODS = ("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS")
+CORS_ALLOW_CREDENTIALS = True
+CORS_ALLOW_HEADERS = (
+    "x-requested-with",
+    "x-started-at",
+    "content-type",
+    "accept",
+    "origin",
+    "authorization",
+    "x-csrftoken",
+    "timezone",
+    "sms_disabled",
+)
+# Cloudinary configuration for KYC uploads
+CLOUDINARY = {
+    'cloud_name': env('CLOUDINARY_CLOUD_NAME'),
+    'api_key': env('CLOUDINARY_API_KEY'),
+    'api_secret': env('CLOUDINARY_API_SECRET'),
+}
+
+# Celery configuration for background tasks
+CELERY_BROKER_URL = env('CELERY_BROKER_URL', default='redis://cache:6379/0')
+CELERY_RESULT_BACKEND = env('CELERY_RESULT_BACKEND', default='redis://cache:6379/0')
+CELERY_ACCEPT_CONTENT = ['json']
+CELERY_TASK_SERIALIZER = 'json'
+CELERY_RESULT_SERIALIZER = 'json'
+CELERY_TASK_DEFAULT_QUEUE = 'deafult'
+CELERY_TASK_TRACK_STARTED = True
+CELERY_TASK_TIME_LIMIT = 30 * 60
+CELERY_BROKER_CONNECTION_RETRY_ON_STARTUP = True 
+CELERY_IMPORTS = ('users.tasks', 'cards.tasks', 'notifications.tasks')
+
+CELERY_BEAT_SCHEDULE = {
+    'auto-freeze-inactive-cards':{
+        'task': 'cards.tasks.auto_freeze_inactive_cards',
+        'schedule': crontab(hour=0, minute=0),
+    },
+    'auto-block-inactive-or-deleted-cards': {
+        'task': 'cards.tasks.auto_block_inactive_or_deleted_cards',
+        'schedule': crontab(hour=1, minute=0),
+    }
+}
+
+# Email configuration for SendGrid
+EMAIL_BACKEND = 'django.core.mail.backends.smtp.EmailBackend'
+EMAIL_HOST = 'smtp.sendgrid.net'
+EMAIL_PORT = 587
+EMAIL_USE_TLS = True
+EMAIL_HOST_USER = 'apikey'
+EMAIL_HOST_PASSWORD = env('SENDGRID_API_KEY')
+DEFAULT_FROM_EMAIL = env('DEFAULT_FROM_EMAIL')
+
+
+# Sentry configuration for error monitoring
+SENTRY_DSN = env('SENTRY_DSN')
+SENTRY_LOG_LEVEL = env.int("DJANGO_SENTRY_LOG_LEVEL", logging.INFO)
+if SENTRY_DSN:
+    sentry_sdk.init(
+        dsn=SENTRY_DSN,
+        traces_sample_rate=1.0,
+    )
+
+# Internationalization
+# https://docs.djangoproject.com/en/4.2/topics/i18n/
+
+LANGUAGE_CODE = "en-us"
+
+TIME_ZONE = "UTC"
+
+USE_I18N = True
+
+USE_TZ = True
+
+
+# Static files (CSS, JavaScript, Images)
+# https://docs.djangoproject.com/en/4.2/howto/static-files/
+
+STATIC_URL = '/static/'
+MEDIA_URL = '/media/'
+STATIC_ROOT = os.path.join(BASE_DIR, 'staticfiles')
+MEDIA_ROOT =  os.path.join(BASE_DIR, 'media')
+# Default primary key field type
+# https://docs.djangoproject.com/en/4.2/ref/settings/#default-auto-field
+
+CELERY_TASK_DEFAULT_QUEUE = 'default'
+CELERY_TASK_TRACK_STARTED = True
+CELERY_TASK_TIME_LIMIT = 30 * 60  # 30 minutes
+CELERY_IMPORTS = ('users.tasks',)
+
+
+# ********************************************************************************* IMP_NOTE *********************************************************************************
+# or sensitive values (like secrets, keys, passwords), you should avoid setting a default in code.
