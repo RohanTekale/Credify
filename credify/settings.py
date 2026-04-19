@@ -48,6 +48,7 @@ INSTALLED_APPS = [
     'rewards.apps.RewardsConfig',
     'notifications.apps.NotificationsConfig',
     'dev_panel',
+    'enquiry',
 ]
 
 MIDDLEWARE = [

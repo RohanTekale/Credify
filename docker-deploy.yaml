@@ -6,6 +6,8 @@ services:
       context: .
       dockerfile: Dockerfile
     image: credify_django_app
+    volumes:
+      - .:/app
     env_file:
       - .env
     environment:
@@ -30,6 +32,8 @@ services:
       context: .
       dockerfile: Dockerfile
     image: credify_django_app
+    volumes:
+      - .:/app
     env_file:
       - .env
     environment:
@@ -49,6 +53,8 @@ services:
       context: .
       dockerfile: Dockerfile
     image: credify_django_app
+    volumes:
+      - .:/app
     env_file:
       - .env
     environment:

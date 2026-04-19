@@ -28,5 +28,6 @@ urlpatterns = [
     # path('api/rewards/', include('rewards.urls')),
     # path('api/notifications/', include('notifications.urls')),
     path('api/dev/', include('dev_panel.urls')),
+    path('api/requests/', include('enquiry.urls')),
     path('swagger/', schema_view.with_ui('swagger', cache_timeout=0), name='schema-swagger-ui'),
 ] + static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)
