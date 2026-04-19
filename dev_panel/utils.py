@@ -17,36 +17,6 @@ BLOCKED_PATTERNS = [
     r"--.*$", 
 ]
 
-PROJECT_TABLES = {
-    # users app
-    "users_user",
-    "users_kycreviewlog",
-    "users_reactivationrequest",
-    "users_user_groups",
-    "users_user_user_permissions",
-    # cards app
-    "cards_creditcard",
-    "cards_subscription",
-    "cards_cardtype",
-    "cards_cardrequest",
-    # transactions app
-    "transactions_transaction",
-    # notifications app  (add real table names from notifications/models.py if different)
-    # billing / rewards — add their tables below when you create them
-    # dev_panel own tables
-    "dev_panel_querylog",
-    "dev_panel_auditlog",
-    # Django built-ins you care about
-    "auth_user",
-    "auth_group",
-    "auth_permission",
-    "auth_group_permissions",
-    "django_session",
-    "django_migrations",
-    "django_content_type",
-}
-
-
 
 def is_safe_query(sql: str) -> tuple[bool,str]:
     upper = sql.upper().strip()
@@ -56,7 +26,11 @@ def is_safe_query(sql: str) -> tuple[bool,str]:
             return False, f"blocked pattern detected: {pattern}"
     return True, ""
 
-def get_all_tables() -> list[str]:
+def get_all_tables() -> list[dict]:
+    """
+    Dynamically fetches all user tables from the public schema.
+    No hardcoded whitelist — any newly migrated table appears automatically.
+    """
     sql = """
         SELECT
             c.relname  AS name,
@@ -68,13 +42,13 @@ def get_all_tables() -> list[str]:
              obj_description(c.oid) AS description
         FROM pg_class c
         JOIN pg_namespace n ON n.oid = c.relnamespace
-        WHERE n.nspname = 'public' AND c.relkind = 'r' AND c.relname = ANY(%s)
+        WHERE n.nspname = 'public' AND c.relkind = 'r'
         ORDER BY pg_total_relation_size(c.oid) DESC;
     """
     with connection.cursor() as cur:
-        cur.execute(sql, [list(PROJECT_TABLES)])
+        cur.execute(sql)
         cols = [d[0] for d in cur.description]
-        return [dict(zip(cols,row)) for row in cur.fetchall()]
+        return [dict(zip(cols, row)) for row in cur.fetchall()]
 
 def get_table_schema(table_name: str) -> list[dict]:
     _validate_table_name(table_name)
@@ -152,20 +126,21 @@ def get_db_stats() -> dict:
     with connection.cursor() as cur:
         cur.execute("SELECT pg_size_pretty(pg_database_size(current_database()))")
         db_size = cur.fetchone()[0]
-    
+
+        # Dynamically count all tables in the public schema
         cur.execute("""
             SELECT COUNT(*) FROM pg_class c
             JOIN pg_namespace n ON n.oid = c.relnamespace
-            WHERE n.nspname = 'public' AND c.relkind = 'r' AND c.relname = ANY(%s)
-        """,[list(PROJECT_TABLES)])
+            WHERE n.nspname = 'public' AND c.relkind = 'r'
+        """)
         table_count = cur.fetchone()[0]
 
         cur.execute("""
             SELECT COALESCE(SUM(reltuples::BIGINT),0)
             FROM pg_class c
             JOIN pg_namespace n ON n.oid = c.relnamespace
-            WHERE n.nspname = 'public' AND c.relkind = 'r' AND c.relname = ANY(%s)            
-        """, [list(PROJECT_TABLES)])
+            WHERE n.nspname = 'public' AND c.relkind = 'r'
+        """)
         total_rows = cur.fetchone()[0]
 
         cur.execute("SELECT COUNT(*) FROM pg_stat_activity WHERE state = 'active'")
@@ -231,20 +206,22 @@ def delete_row(table_name: str, row_id: int) -> bool:
 _SAFE_IDENTIFIER = re.compile(r'^[a-zA-Z_][a-zA-Z0-9_]*$')
 
 def _validate_table_name(name: str):
+    """
+    Validates table name against actual DB tables in the public schema.
+    No hardcoded whitelist — works automatically with any migrated table.
+    """
     if not _SAFE_IDENTIFIER.match(name):
         raise ValueError(f"Invalid table name: {name}")
-    if name not in PROJECT_TABLES:
-        raise ValueError(f"Table not allowed: {name}")
-    # with connection.cursor() as cur:
-    #     cur.execute(
-    #         """
-    #         SELECT 1 FROM pg_class c
-    #         JOIN pg_namespace n ON n.oid = c.relnamespace
-    #         WHERE n.nspname = 'public' AND c.relkind = 'r' AND c.relname = %s            
-    #         """, [name]
-    #     )
-    #     if not cur.fetchone():
-    #         raise ValueError(f"Table does not exist: {name}")
+    with connection.cursor() as cur:
+        cur.execute(
+            """
+            SELECT 1 FROM pg_class c
+            JOIN pg_namespace n ON n.oid = c.relnamespace
+            WHERE n.nspname = 'public' AND c.relkind = 'r' AND c.relname = %s            
+            """, [name]
+        )
+        if not cur.fetchone():
+            raise ValueError(f"Table does not exist: {name}")
 
 def _validate_identifier(name: str):
     if not _SAFE_IDENTIFIER.match(name):
