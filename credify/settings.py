@@ -37,7 +37,7 @@ INSTALLED_APPS = [
     'rest_framework_simplejwt',
     'corsheaders',
     'drf_yasg',
-    # 'django_filters',
+    'django_filters',
     'django_celery_beat',
     'cloudinary',
     'credify_core.apps.CredifycoreConfig',
@@ -222,11 +222,11 @@ CELERY_RESULT_BACKEND = env('CELERY_RESULT_BACKEND', default='redis://cache:6379
 CELERY_ACCEPT_CONTENT = ['json']
 CELERY_TASK_SERIALIZER = 'json'
 CELERY_RESULT_SERIALIZER = 'json'
-CELERY_TASK_DEFAULT_QUEUE = 'deafult'
+CELERY_TASK_DEFAULT_QUEUE = 'default'
 CELERY_TASK_TRACK_STARTED = True
 CELERY_TASK_TIME_LIMIT = 30 * 60
 CELERY_BROKER_CONNECTION_RETRY_ON_STARTUP = True 
-CELERY_IMPORTS = ('users.tasks', 'cards.tasks', 'notifications.tasks')
+CELERY_IMPORTS = ('users.tasks', 'cards.tasks', 'notifications.tasks','enquiry.tasks')
 
 CELERY_BEAT_SCHEDULE = {
     'auto-freeze-inactive-cards':{
@@ -236,7 +236,16 @@ CELERY_BEAT_SCHEDULE = {
     'auto-block-inactive-or-deleted-cards': {
         'task': 'cards.tasks.auto_block_inactive_or_deleted_cards',
         'schedule': crontab(hour=1, minute=0),
-    }
+    },
+    'check-sla-breaches': {
+        'task': 'enquiry.tasks.check_sla_breaches',
+        'schedule': crontab(minute=0),        
+    },
+    'notify-stale-requests': {
+        'task': 'enquiry.tasks.notify_stale_raised_requests',
+        'schedule': crontab(hour=8, minute=0), # daily at 8am
+    },
+
 }
 
 # Email configuration for SendGrid
@@ -252,6 +261,9 @@ DEFAULT_FROM_EMAIL = env('DEFAULT_FROM_EMAIL')
 # Sentry configuration for error monitoring
 SENTRY_DSN = env('SENTRY_DSN')
 SENTRY_LOG_LEVEL = env.int("DJANGO_SENTRY_LOG_LEVEL", logging.INFO)
+SENTRY_AUTH_TOKEN = env('SENTRY_AUTH_TOKEN', default=None)
+SENTRY_ORG_SLUG = env('SENTRY_ORG_SLUG', default='codezentraa')
+SENTRY_PROJECT_SLUG = env('SENTRY_PROJECT_SLUG', default='credify')
 if SENTRY_DSN:
     sentry_sdk.init(
         dsn=SENTRY_DSN,
